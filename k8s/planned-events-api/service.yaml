@@ -1,0 +1,20 @@
+# Kubernetes Service for Planned Events API
+# Denne filen definerer en Kubernetes Service som eksponerer Planned Events API-applikasjonen
+apiVersion: v1
+kind: Service
+metadata:
+  name: planned-events-api
+  labels:
+    app: planned-events-api
+spec:
+  # Velger hvilke pods som skal være tilgjengelige gjennom denne servicen
+  # Baserer seg på label 'app: planned-events-api'
+  selector:
+    app: planned-events-api
+  ports:
+    - name: http
+      port: 80 # Port som service lytter på (ekstern)
+      targetPort: 5001 # Port som applikasjonen lytter på (intern)
+  # LoadBalancer type gir ekstern tilgang til servicen
+  # Dette er vanlig for produksjonsmiljøer hvor man trenger ekstern tilgang
+  type: LoadBalancer

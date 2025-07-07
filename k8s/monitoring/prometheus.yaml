@@ -1,0 +1,37 @@
+# =============================================================================
+# PROMETHEUS SERVER DEPLOYMENT - DATASOURCE FOR DASHBOARD
+# =============================================================================
+# Dette er IKKE dashboardet - dette er datakilden som dashboardet bruker
+# Prometheus samler inn metrics fra alle applikasjoner og lagrer dem
+# Grafana (dashboardet) leser data fra Prometheus for å vise grafer og visualiseringer
+
+# Prometheus Server
+# ----------------
+# Prometheus kommunikasjon:
+# 1. Samler metrics fra planned-events-api via /metrics endpoint
+# 2. Samler metrics fra postgres via postgres-exporter
+# 3. Lagrer metrics i persistent storage
+# 4. Grafana (dashboardet) leser metrics fra Prometheus via datasource
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  name: prometheus-kube-prometheus
+  namespace: monitoring
+spec:
+  replicas: 1
+  serviceAccountName: prometheus-operator
+  # ServiceMonitorSelector: {} - betyr at Prometheus vil finne alle ServiceMonitors
+  # Dette aktiverer automatisk discovery av metrics endpoints
+  serviceMonitorSelector: {}
+  resources:
+    requests:
+      memory: 400Mi
+      cpu: 200m
+  storage:
+    volumeClaimTemplate:
+      spec:
+        storageClassName: default
+        accessModes: ['ReadWriteOnce']
+        resources:
+          requests:
+            storage: 10Gi

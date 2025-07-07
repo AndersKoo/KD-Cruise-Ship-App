@@ -1,0 +1,127 @@
+# =============================================================================
+# PLANNED EVENTS API DEPLOYMENT
+# =============================================================================
+# Denne filen definerer både PostgreSQL database og API-server deployment
+# Kommunikasjon med Prometheus: API-server eksponerer metrics på /metrics endpoint
+# som Prometheus kan scrape via annotations
+
+# PostgreSQL Database Deployment
+# -----------------------------
+# Prometheus kommunikasjon: postgres-exporter.yaml setter opp en sidecar container
+# som eksporterer PostgreSQL metrics til Prometheus
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:14
+          env:
+            - name: POSTGRES_DB
+              value: 'cruise_db'
+            - name: POSTGRES_USER
+              value: 'cruise_user'
+            - name: POSTGRES_PASSWORD
+              value: 'cruise_pass'
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - mountPath: /docker-entrypoint-initdb.d
+              name: init-volume
+      volumes:
+        - name: init-volume
+          configMap:
+            name: postgres-init-sql
+
+---
+# PostgreSQL Service
+# -----------------
+# Gjør PostgreSQL tilgjengelig for andre pods i cluster
+# Prometheus bruker denne service for å finne postgres-exporter
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: postgres
+
+---
+# Planned Events API Service
+# --------------------------
+# Gjør API-server tilgjengelig eksternt på port 80
+# Intern kommunikasjon skjer på port 5001
+apiVersion: v1
+kind: Service
+metadata:
+  name: planned-events-api
+spec:
+  ports:
+    - port: 80
+      targetPort: 5001
+  selector:
+    app: planned-events-api
+
+---
+# Planned Events API Deployment
+# -----------------------------
+# Hovedapplikasjonen som eksponerer metrics for Prometheus
+# Prometheus kommunikasjon: Annotations forteller Prometheus hvor metrics finnes
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: planned-events-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: planned-events-api
+  template:
+    metadata:
+      labels:
+        app: planned-events-api
+      # PROMETHEUS INTEGRASJON
+      # Disse annotations forteller Prometheus hvor metrics kan finnes
+      annotations:
+        prometheus.io/scrape: 'true' # Aktiverer scraping av denne pod
+        prometheus.io/port: '5001' # Port hvor metrics er tilgjengelig
+        prometheus.io/path: '/metrics' # HTTP path til metrics endpoint
+    spec:
+      containers:
+        - name: planned-events-api
+          image: python:3.11-slim
+          ports:
+            - containerPort: 5001
+          env:
+            - name: DB_HOST
+              value: 'postgres'
+            - name: DB_PORT
+              value: '5432'
+            - name: DB_NAME
+              value: 'cruise_db'
+            - name: DB_USER
+              value: 'cruise_user'
+            - name: DB_PASSWORD
+              value: 'cruise_pass'
+          command: ['/bin/bash']
+          args:
+            ['-c', 'pip install -r /app/requirements.txt && python /app/app.py']
+          volumeMounts:
+            - name: app-code
+              mountPath: /app
+      volumes:
+        - name: app-code
+          configMap:
+            name: planned-events-api-code

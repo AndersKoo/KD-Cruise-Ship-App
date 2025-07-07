@@ -1,0 +1,38 @@
+-- Opprett bruker (hvis den ikke eksisterer)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'cruise_user') THEN
+        CREATE USER cruise_user WITH PASSWORD 'cruise_pass';
+    END IF;
+END
+$$;
+
+-- Gi privilegier
+GRANT ALL PRIVILEGES ON DATABASE cruise_db TO cruise_user;
+
+-- Koble til cruise_db
+\c cruise_db;
+
+-- Opprett planned_events_tab tabellen (hvis den ikke eksisterer)
+CREATE TABLE IF NOT EXISTS planned_events_tab (
+    voyage_id VARCHAR(50) NOT NULL,
+    vessel_id VARCHAR(50) NOT NULL,
+    from_date TIMESTAMP NOT NULL,
+    to_date TIMESTAMP NOT NULL,
+    event VARCHAR(255) NOT NULL,
+    PRIMARY KEY (voyage_id, vessel_id, from_date)
+);
+
+-- Gi tillatelser på tabellen
+GRANT ALL PRIVILEGES ON TABLE planned_events_tab TO cruise_user;
+
+-- Sett inn eksempeldata (kun hvis tabellen er tom)
+INSERT INTO planned_events_tab (voyage_id, vessel_id, from_date, to_date, event) 
+SELECT * FROM (VALUES
+    ('VOY001', 'VESSEL001', TIMESTAMP '2024-07-15 08:00:00', TIMESTAMP '2024-07-15 18:00:00', 'Port Call - Oslo'),
+    ('VOY001', 'VESSEL001', TIMESTAMP '2024-07-16 06:00:00', TIMESTAMP '2024-07-16 16:00:00', 'Port Call - Bergen'),
+    ('VOY002', 'VESSEL002', TIMESTAMP '2024-07-20 10:00:00', TIMESTAMP '2024-07-20 20:00:00', 'Port Call - Trondheim'),
+    ('VOY002', 'VESSEL002', TIMESTAMP '2024-07-21 08:00:00', TIMESTAMP '2024-07-21 18:00:00', 'Port Call - Ålesund'),
+    ('VOY003', 'VESSEL001', TIMESTAMP '2024-07-25 12:00:00', TIMESTAMP '2024-07-25 22:00:00', 'Port Call - Stavanger')
+) AS v(voyage_id, vessel_id, from_date, to_date, event)
+WHERE NOT EXISTS (SELECT 1 FROM planned_events_tab LIMIT 1);

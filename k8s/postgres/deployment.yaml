@@ -1,0 +1,61 @@
+# =============================================================================
+# POSTGRESQL DATABASE DEPLOYMENT
+# =============================================================================
+# Dedikert PostgreSQL deployment med persistent storage
+# Prometheus kommunikasjon: postgres-exporter.yaml setter opp monitoring
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:14
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: 'cruise_db'
+            - name: POSTGRES_USER
+              value: 'cruise_user'
+            - name: POSTGRES_PASSWORD
+              value: 'cruise_pass'
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+            - name: init-script
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+        - name: init-script
+          configMap:
+            name: postgres-init-sql
+
+---
+# Persistent Volume Claim for PostgreSQL
+# ------------------------------------
+# Sikrer at database data ikke går tapt ved pod restart
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
