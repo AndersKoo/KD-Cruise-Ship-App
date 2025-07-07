@@ -1,6 +1,6 @@
 # 🚢 Cruise Ship App - System Oversikt
 
-![Grafana Dashboard](images/grafana-dashboard.png)
+![Grafana Dashboard](/k8s/images/grafana-dashboard.png)
 
 Dette er en komplett cruise ship applikasjon med monitoring og observability. Systemet består av en Python API, PostgreSQL database, og et omfattende monitoring-stack med Prometheus og Grafana.
 
