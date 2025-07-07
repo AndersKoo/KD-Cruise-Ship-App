@@ -1,13 +1,23 @@
+# =============================================================================
+# POSTGRESQL SERVICE - DATABASE TILGANG
+# =============================================================================
+# Dette er service-komponenten som gjør PostgreSQL tilgjengelig for andre applikasjoner
+# Service fungerer som en "dør" som andre komponenter kan bruke for å koble til databasen
+# Kommunikasjon: API-serveren bruker denne servicen for å koble til PostgreSQL
+
+# Service definisjon
+# ----------------
+# Dette er Kubernetes Service som eksponerer PostgreSQL pod
 apiVersion: v1
 kind: Service
 metadata:
-  name: postgres
+  name: postgres # Navnet på servicen som andre komponenter bruker
   labels:
-    app: postgres
+    app: postgres # Label for å identifisere denne servicen
 spec:
   selector:
-    app: postgres
+    app: postgres # Velger pods med label 'app: postgres'
   ports:
-    - port: 5432
-      targetPort: 5432
-  type: ClusterIP
+    - port: 5432 # Port som andre komponenter kobler til (ekstern)
+      targetPort: 5432 # Port på PostgreSQL pod (intern)
+  type: ClusterIP # Service type - kun tilgjengelig innenfor cluster
