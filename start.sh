@@ -3,13 +3,19 @@
 echo "🚢 Cruise Ship App - Enkel Startup med Testdata"
 echo "================================================"
 
-# Stopp eksisterende prosesser
+# =============================================================================
+# RYDDING OG FORBEREDELSE
+# =============================================================================
+# Stopp eksisterende prosesser for å unngå konflikter
 echo "🧹 Rydder opp..."
 pkill -f "kubectl port-forward" 2>/dev/null || true
 pkill -f "generate-test-data.sh" 2>/dev/null || true
 sleep 3
 
-# Sjekk minikube
+# =============================================================================
+# MINIKUBE SETUP
+# =============================================================================
+# Sjekk om minikube kjører, start hvis nødvendig
 echo "🔍 Sjekker minikube..."
 if kubectl cluster-info >/dev/null 2>&1; then
     echo "✅ Minikube kjører"
@@ -18,11 +24,18 @@ else
     minikube start
 fi
 
-# Opprett ConfigMap for API-koden
+# =============================================================================
+# API KODE CONFIGMAP
+# =============================================================================
+# Opprett ConfigMap som inneholder Python API-koden
+# Dette gjør koden tilgjengelig for Kubernetes pods
 echo "📦 Oppretter ConfigMap for API-koden..."
 kubectl create configmap planned-events-api-code --from-file=app.py=planned-events-api/app.py --from-file=requirements.txt=planned-events-api/requirements.txt 2>/dev/null || echo "✅ ConfigMap finnes allerede"
 
-# Sjekk om postgres allerede kjører
+# =============================================================================
+# POSTGRESQL DEPLOYMENT
+# =============================================================================
+# Sjekk om PostgreSQL allerede kjører for å unngå duplikater
 POSTGRES_RUNNING=$(kubectl get pods -l app=postgres --no-headers 2>/dev/null | grep Running | wc -l)
 if [ "$POSTGRES_RUNNING" -gt 0 ]; then
     echo "✅ PostgreSQL kjører allerede, hopper over deploy."
@@ -31,13 +44,21 @@ else
     kubectl apply -f k8s/postgres/ 2>/dev/null || echo "⚠️  PostgreSQL allerede deployet"
 fi
 
-# Deploy bare de nødvendige komponentene
+# =============================================================================
+# API DEPLOYMENT
+# =============================================================================
+# Deploy Python API-serveren
 echo "🚀 Deployer nødvendige komponenter..."
 kubectl apply -f k8s/planned-events-api/ 2>/dev/null || echo "⚠️  API allerede deployet"
 
-# Deploy enkel Prometheus (uten kube-prometheus-stack)
+# =============================================================================
+# PROMETHEUS DEPLOYMENT (INLINE KONFIGURASJON)
+# =============================================================================
+# Deploy enkel Prometheus for metrics collection
+# Dette er en inline-konfigurasjon, ikke en separat fil
 echo "📈 Deployer enkel Prometheus..."
 cat <<EOF | kubectl apply -f -
+# Prometheus ConfigMap - Definerer hva som skal samles inn av metrics
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -45,16 +66,17 @@ metadata:
 data:
   prometheus.yml: |
     global:
-      scrape_interval: 15s
+      scrape_interval: 15s    # Hvor ofte metrics samles inn
     scrape_configs:
-      - job_name: 'planned-events-api'
+      - job_name: 'planned-events-api'    # API metrics
         static_configs:
-          - targets: ['planned-events-api:80']
-        metrics_path: /metrics
-      - job_name: 'postgres-exporter'
+          - targets: ['planned-events-api:80']  # API server adresse
+        metrics_path: /metrics              # Endpoint for metrics
+      - job_name: 'postgres-exporter'      # Database metrics
         static_configs:
-          - targets: ['postgres-exporter:9187']
+          - targets: ['postgres-exporter:9187'] # Database exporter
 ---
+# Prometheus Deployment - Kjører Prometheus server
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -76,12 +98,13 @@ spec:
         - containerPort: 9090
         volumeMounts:
         - name: config
-          mountPath: /etc/prometheus
+          mountPath: /etc/prometheus    # Mount konfigurasjonen
       volumes:
       - name: config
         configMap:
-          name: prometheus-config
+          name: prometheus-config        # Bruker ConfigMap fra over
 ---
+# Prometheus Service - Gjør Prometheus tilgjengelig
 apiVersion: v1
 kind: Service
 metadata:
@@ -95,9 +118,13 @@ spec:
     app: prometheus
 EOF
 
-# Deploy enkel Grafana
+# =============================================================================
+# GRAFANA DEPLOYMENT (INLINE KONFIGURASJON)
+# =============================================================================
+# Deploy enkel Grafana for dashboard og visualisering
 echo "📊 Deployer enkel Grafana..."
 cat <<EOF | kubectl apply -f -
+# Grafana DataSources ConfigMap - Definerer Prometheus som datakilde
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -108,10 +135,11 @@ data:
     datasources:
     - name: Prometheus
       type: prometheus
-      url: http://prometheus:9090
+      url: http://prometheus:9090    # Kobler til Prometheus service
       access: proxy
       isDefault: true
 ---
+# Grafana Deployment - Kjører Grafana dashboard
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -138,12 +166,13 @@ spec:
           value: admin123
         volumeMounts:
         - name: datasources
-          mountPath: /etc/grafana/provisioning/datasources
+          mountPath: /etc/grafana/provisioning/datasources  # Mount datasources
       volumes:
       - name: datasources
         configMap:
-          name: grafana-datasources
+          name: grafana-datasources    # Bruker ConfigMap fra over
 ---
+# Grafana Service - Gjør Grafana tilgjengelig
 apiVersion: v1
 kind: Service
 metadata:
@@ -157,7 +186,10 @@ spec:
     app: grafana
 EOF
 
-# Vent på at pods er klare
+# =============================================================================
+# VENTING PÅ PODS
+# =============================================================================
+# Vent på at alle pods er klare før vi fortsetter
 echo "⏳ Venter på at pods er klare..."
 echo "   - Venter på PostgreSQL..."
 kubectl wait --for=condition=ready pod -l app=postgres --timeout=300s 2>/dev/null || echo "⚠️  PostgreSQL venting feilet"
@@ -171,7 +203,10 @@ kubectl wait --for=condition=ready pod -l app=prometheus --timeout=300s 2>/dev/n
 echo "   - Venter på Grafana..."
 kubectl wait --for=condition=ready pod -l app=grafana --timeout=300s 2>/dev/null || echo "⚠️  Grafana venting feilet"
 
-# Start port-forwarding
+# =============================================================================
+# PORT-FORWARDING SETUP
+# =============================================================================
+# Gjør tjenester tilgjengelige lokalt på maskinen
 echo "🌐 Starter port-forwarding..."
 kubectl port-forward svc/grafana 3001:80 > /dev/null 2>&1 &
 GRAFANA_PID=$!
@@ -185,7 +220,10 @@ kubectl port-forward svc/planned-events-api 8080:80 > /dev/null 2>&1 &
 API_PID=$!
 echo "🔌 API: http://localhost:8080/v1/events"
 
-# Test at API er tilgjengelig
+# =============================================================================
+# API TILGJENGELIGHETSTEST
+# =============================================================================
+# Test at API-serveren svarer
 echo "🔍 Tester API-tilgjengelighet..."
 sleep 10
 if curl -s http://localhost:8080/healthz >/dev/null 2>&1; then
@@ -194,7 +232,10 @@ else
     echo "⚠️  API er ikke tilgjengelig ennå"
 fi
 
-# Integrert testdata-generering
+# =============================================================================
+# TESTDATA-GENERERING
+# =============================================================================
+# Starter automatisk generering av testdata for å vise metrics
 echo "📊 Starter integrert testdata-generering..."
 
 # Funksjon for å vente litt
@@ -219,7 +260,7 @@ check_api_availability() {
     return 1
 }
 
-# Funksjon for å gjøre API-kall
+# Funksjon for å gjøre API-kall og registrere resultat
 make_api_call() {
     local endpoint=$1
     local expected_status=$2
@@ -288,7 +329,10 @@ echo "   - Success requests (2xx)"
 echo "   - Failed requests (4xx)" 
 echo "   - PostgreSQL disk space endringer"
 
-# Fase 1: Generer vellykkede requests (2xx)
+# =============================================================================
+# FASE 1: VELLYKKEDE REQUESTS (2XX)
+# =============================================================================
+# Generer vellykkede API-kall som gir 2xx status koder
 echo ""
 echo "🟢 Fase 1: Genererer vellykkede requests (2xx)..."
 success_count=0
@@ -303,7 +347,10 @@ echo "✅ Vellykkede requests: $success_count/20"
 
 wait_a_bit 5
 
-# Fase 2: Generer feilede requests (4xx)
+# =============================================================================
+# FASE 2: FEILEDE REQUESTS (4XX)
+# =============================================================================
+# Generer feilede API-kall som gir 4xx status koder
 echo ""
 echo "🔴 Fase 2: Genererer feilede requests (4xx)..."
 failed_count=0
@@ -325,7 +372,10 @@ echo "✅ Feilede requests: $failed_count/8"
 
 wait_a_bit 5
 
-# Fase 3: Legg til data i PostgreSQL
+# =============================================================================
+# FASE 3: DATABASE ENDRINGER
+# =============================================================================
+# Legg til data i PostgreSQL for å vise disk space endringer
 echo ""
 echo "🗄️  Fase 3: Legger til data i PostgreSQL..."
 if add_postgres_data; then
@@ -336,7 +386,10 @@ fi
 
 wait_a_bit 5
 
-# Fase 4: Generer mer trafikk etter database-endringer
+# =============================================================================
+# FASE 4: POST-DATABASE TRAFIKK
+# =============================================================================
+# Generer mer trafikk etter database-endringer
 echo ""
 echo "🔄 Fase 4: Genererer mer trafikk etter database-endringer..."
 post_success_count=0
@@ -349,7 +402,10 @@ done
 
 echo "✅ Post-database requests: $post_success_count/15"
 
-# Fase 5: Kontinuerlig trafikk (kjør i bakgrunnen)
+# =============================================================================
+# FASE 5: KONTINUERLIG TRAFIKK
+# =============================================================================
+# Start kontinuerlig trafikk-generering i bakgrunnen
 echo ""
 echo "🔄 Fase 5: Starter kontinuerlig trafikk-generering..."
 (
@@ -371,7 +427,10 @@ CONTINUOUS_PID=$!
 
 echo "✅ Kontinuerlig trafikk startet (PID: $CONTINUOUS_PID)"
 
-# Lagre PIDs
+# =============================================================================
+# PID LAGRING OG OPPSUMERING
+# =============================================================================
+# Lagre prosess-IDer for senere opprydding
 echo "$GRAFANA_PID $PROMETHEUS_PID $API_PID $CONTINUOUS_PID" > .running_pids
 
 echo ""
@@ -404,7 +463,10 @@ echo "   ./stop-app.sh"
 echo ""
 echo "✅ Applikasjonen kjører nå!"
 
-# Vent på bruker-input
+# =============================================================================
+# VENTING PÅ BRUKER-INPUT
+# =============================================================================
+# Vent på at brukeren trykker Ctrl+C for å stoppe
 echo ""
 echo "Trykk Ctrl+C for å stoppe..."
 trap 'echo -e "\nStopper..."; kill $GRAFANA_PID $PROMETHEUS_PID $API_PID $CONTINUOUS_PID 2>/dev/null; rm -f .running_pids; exit' INT
