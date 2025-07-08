@@ -279,9 +279,9 @@ make_api_call() {
     fi
 }
 
-# Funksjon for å legge til data i PostgreSQL
-add_postgres_data() {
-    echo "🗄️  Legger til testdata i PostgreSQL..."
+# Funksjon for å legge til testdata (uten å tømme init.sql dataene)
+add_testdata_only() {
+    echo "🗄️  Legger til testdata (bevarer init.sql dataene)..."
     
     # Finn PostgreSQL pod
     POSTGRES_POD=$(kubectl get pods -l app=postgres -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
@@ -294,10 +294,11 @@ add_postgres_data() {
     echo "📦 Bruker PostgreSQL pod: $POSTGRES_POD"
     
     # Sjekk om testdata allerede finnes
-    EXISTS=$(kubectl exec -it "$POSTGRES_POD" -- psql -U cruise_user -d cruise_db -tAc "SELECT COUNT(*) FROM planned_events_tab WHERE voyage_id = 'VOY006' AND vessel_id = 'VESSEL003' AND from_date = '2025-07-06 10:00:00';" 2>/dev/null | tr -d '[:space:]')
+    EXISTS=$(kubectl exec -i "$POSTGRES_POD" -- psql -U cruise_user -d cruise_db -tAc "SELECT COUNT(*) FROM planned_events_tab WHERE voyage_id = 'VOY006' AND vessel_id = 'VESSEL003' AND from_date = '2025-07-06 10:00:00';" 2>/dev/null | tr -d '[:space:]')
     if [ "$EXISTS" = "0" ]; then
-        # Koble til PostgreSQL og legg til testdata
-        kubectl exec -it "$POSTGRES_POD" -- psql -U cruise_user -d cruise_db -c "
+        # Legg til testdata (uten å tømme eksisterende data)
+        echo "📊 Legger til testdata..."
+        kubectl exec -i "$POSTGRES_POD" -- psql -U cruise_user -d cruise_db -c "
         INSERT INTO planned_events_tab (voyage_id, vessel_id, from_date, to_date, event) VALUES 
         ('VOY006', 'VESSEL003', '2025-07-06 10:00:00', '2025-07-06 12:00:00', 'Test Event 1'),
         ('VOY007', 'VESSEL004', '2025-07-06 14:00:00', '2025-07-06 16:00:00', 'Test Event 2'),
@@ -305,15 +306,16 @@ add_postgres_data() {
         ('VOY009', 'VESSEL006', '2025-07-07 08:00:00', '2025-07-07 10:00:00', 'Test Event 4'),
         ('VOY010', 'VESSEL007', '2025-07-07 12:00:00', '2025-07-07 14:00:00', 'Test Event 5');
         " 2>/dev/null
+        
         if [ $? -eq 0 ]; then
-            echo "✅ Testdata lagt til i PostgreSQL"
+            echo "✅ Testdata lagt til (init.sql dataene bevart)"
             return 0
         else
-            echo "❌ Kunne ikke legge til data i PostgreSQL"
+            echo "❌ Kunne ikke legge til testdata"
             return 1
         fi
     else
-        echo "ℹ️  Testdata finnes allerede i PostgreSQL, hopper over innsetting."
+        echo "ℹ️  Testdata finnes allerede, hopper over innsetting."
         return 0
     fi
 }
@@ -375,13 +377,13 @@ wait_a_bit 5
 # =============================================================================
 # FASE 3: DATABASE ENDRINGER
 # =============================================================================
-# Legg til data i PostgreSQL for å vise disk space endringer
+# Legg til testdata (bevarer init.sql dataene)
 echo ""
-echo "🗄️  Fase 3: Legger til data i PostgreSQL..."
-if add_postgres_data; then
-    echo "✅ PostgreSQL data lagt til"
+echo "🗄️  Fase 3: Legger til testdata (bevarer init.sql dataene)..."
+if add_testdata_only; then
+    echo "✅ Testdata lagt til (init.sql dataene bevart)"
 else
-    echo "⚠️  Kunne ikke legge til PostgreSQL data, fortsetter..."
+    echo "⚠️  Kunne ikke legge til testdata, fortsetter..."
 fi
 
 wait_a_bit 5
